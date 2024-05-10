@@ -1,3 +1,5 @@
+const native_endian = @import("builtin").cpu.arch.endian();
+
 const symbols = .{
     .@"ntdll.dll" = .{
         .hooks = .{
@@ -308,7 +310,6 @@ const symbols = .{
             .PfxInitialize,
             .PfxInsertPrefix,
             .PfxRemovePrefix,
-
 
             // Needs more investigating into what lock functions we want to pass through
             // .RtlAcquirePebLock,
@@ -1831,7 +1832,6 @@ const symbols = .{
 
             .TpAllocTimer,
             .TpSetTimer,
-
             .EtwEventWrite, // Nt calls
             .EtwEventEnabled, // Nt calls
             .RtlQueryRegistryValuesEx,
@@ -1852,46 +1852,45 @@ const symbols = .{
 
 comptime {
     // Verify symbols don't have duplicates
-    for(@typeInfo(@TypeOf(symbols)).Struct.fields) |dll_field| {
+    for (@typeInfo(@TypeOf(symbols)).Struct.fields) |dll_field| {
         const dll_name = dll_field.name;
         const dll_value = @field(symbols, dll_name);
-        var dll_symbols: []const []const u8 = &[_][]const u8 {};
+        var dll_symbols: []const []const u8 = &[_][]const u8{};
 
         @setEvalBranchQuota(5 * @typeInfo(@TypeOf(dll_value.hooks)).Struct.fields.len);
-        for(@typeInfo(@TypeOf(dll_value.hooks)).Struct.fields) |hook_field| {
+        for (@typeInfo(@TypeOf(dll_value.hooks)).Struct.fields) |hook_field| {
             dll_symbols = dll_symbols ++ &[1][]const u8{hook_field.name};
         }
 
         @setEvalBranchQuota(5 * dll_value.real.len);
-        for(dll_value.real) |real_symbol| {
+        for (dll_value.real) |real_symbol| {
             dll_symbols = dll_symbols ++ &[1][]const u8{@tagName(real_symbol)};
         }
 
         @setEvalBranchQuota(5 * dll_value.kill.len);
-        for(dll_value.kill) |kill_symbol| {
+        for (dll_value.kill) |kill_symbol| {
             dll_symbols = dll_symbols ++ &[1][]const u8{@tagName(kill_symbol)};
         }
 
         @setEvalBranchQuota(5 * dll_value.success_stubs.len);
-        for(dll_value.success_stubs) |success_symbol| {
+        for (dll_value.success_stubs) |success_symbol| {
             dll_symbols = dll_symbols ++ &[1][]const u8{@tagName(success_symbol)};
         }
 
         @setEvalBranchQuota(1000 * dll_symbols.len);
         var sorted_symbols = dll_symbols[0..dll_symbols.len].*;
-        std.sort.sort([]const u8, &sorted_symbols, {}, struct {
+        std.sort.pdq([]const u8, &sorted_symbols, {}, struct {
             fn f(_: void, lhs: []const u8, rhs: []const u8) bool {
-                    return std.mem.lessThan(u8, lhs, rhs);
-                }
-            }.f
-        );
+                return std.mem.lessThan(u8, lhs, rhs);
+            }
+        }.f);
 
         @setEvalBranchQuota(10 * dll_symbols.len);
-        for(dll_symbols) |first_sym, i| {
-            if(i + 1 < dll_symbols.len) {
+        for (dll_symbols, 0..) |first_sym, i| {
+            if (i + 1 < dll_symbols.len) {
                 const second_sym = dll_symbols[i + 1];
-                if(std.mem.eql(u8, first_sym, second_sym)) {
-                    @compileError(std.fmt.comptimePrint("Symbol for {s} found at least twice: {s}", .{dll_name, first_sym}));
+                if (std.mem.eql(u8, first_sym, second_sym)) {
+                    @compileError(std.fmt.comptimePrint("Symbol for {s} found at least twice: {s}", .{ dll_name, first_sym }));
                 }
             }
         }
@@ -1900,7 +1899,9 @@ comptime {
 
 fn RealAddrHolder(comptime symname: []const u8) type {
     _ = symname;
-    return struct { var value: ?*const anyopaque = null; };
+    return struct {
+        var value: ?*const anyopaque = null;
+    };
 }
 
 fn KillStub(comptime symname: []const u8) type {
@@ -1930,41 +1931,35 @@ pub const ResolveContext = struct {
 
     fn findEntry(self: *@This(), dll_name: []const u8, symbol_name: []const u8) ResolveResult {
         _ = self;
-        inline for(@typeInfo(@TypeOf(symbols)).Struct.fields) |dll_field| {
-            if(std.mem.eql(u8, dll_name, dll_field.name)) {
+        inline for (@typeInfo(@TypeOf(symbols)).Struct.fields) |dll_field| {
+            if (std.mem.eql(u8, dll_name, dll_field.name)) {
                 const dll_value = @field(symbols, dll_field.name);
 
                 @setEvalBranchQuota(5 * @typeInfo(@TypeOf(dll_value.hooks)).Struct.fields.len);
-                inline for(@typeInfo(@TypeOf(dll_value.hooks)).Struct.fields) |hook_field| {
-                    if(std.mem.eql(u8, hook_field.name, symbol_name)) {
+                inline for (@typeInfo(@TypeOf(dll_value.hooks)).Struct.fields) |hook_field| {
+                    if (std.mem.eql(u8, hook_field.name, symbol_name)) {
                         return .{ .hook = @field(dll_value.hooks, hook_field.name) };
                     }
                 }
 
                 @setEvalBranchQuota(5 * dll_value.real.len);
-                inline for(dll_value.real) |real_sym| {
-                    if(std.mem.eql(u8, @tagName(real_sym), symbol_name)) {
-                        return .{
-                            .real = &RealAddrHolder(@tagName(real_sym)).value
-                        };
+                inline for (dll_value.real) |real_sym| {
+                    if (std.mem.eql(u8, @tagName(real_sym), symbol_name)) {
+                        return .{ .real = &RealAddrHolder(@tagName(real_sym)).value };
                     }
                 }
 
                 @setEvalBranchQuota(5 * dll_value.kill.len);
-                inline for(dll_value.kill) |kill_sym| {
-                    if(std.mem.eql(u8, @tagName(kill_sym), symbol_name)) {
-                        return .{
-                            .hook = @ptrCast(*const anyopaque, &KillStub(@tagName(kill_sym)).f)
-                        };
+                inline for (dll_value.kill) |kill_sym| {
+                    if (std.mem.eql(u8, @tagName(kill_sym), symbol_name)) {
+                        return .{ .hook = @as(*const anyopaque, @ptrCast(&KillStub(@tagName(kill_sym)).f)) };
                     }
                 }
 
                 @setEvalBranchQuota(5 * dll_value.success_stubs.len);
-                inline for(dll_value.success_stubs) |stub_sym| {
-                    if(std.mem.eql(u8, @tagName(stub_sym), symbol_name)) {
-                        return .{
-                            .hook = @ptrCast(*const anyopaque, &SuccessStub(@tagName(stub_sym)).f)
-                        };
+                inline for (dll_value.success_stubs) |stub_sym| {
+                    if (std.mem.eql(u8, @tagName(stub_sym), symbol_name)) {
+                        return .{ .hook = @as(*const anyopaque, @ptrCast(&SuccessStub(@tagName(stub_sym)).f)) };
                     }
                 }
 
@@ -1977,7 +1972,7 @@ pub const ResolveContext = struct {
 
     pub fn resolve(self: *@This(), dll_name: []const u8, symbol_name: []const u8) ?*const anyopaque {
         const entry = self.findEntry(dll_name, symbol_name);
-        return switch(entry) {
+        return switch (entry) {
             .unknown_dll, .dll_known_symbol_unknown => null,
             .hook => |h| h,
             .real => |r| r.*,
@@ -1986,29 +1981,29 @@ pub const ResolveContext = struct {
 
     pub fn provide(self: *@This(), dll_name: []const u8, symbol_name: []const u8, addr: *anyopaque) void {
         const entry = self.findEntry(dll_name, symbol_name);
-        return switch(entry) {
+        return switch (entry) {
             .unknown_dll => @panic("Unknown dll, TODO runtime resolving"),
             .dll_known_symbol_unknown => {
                 //log("WARNING: Unknown symbol for dll {s}: {s}", .{dll_name, symbol_name});
             },
             .hook => |hook_target| {
-                const delta = @ptrToInt(hook_target) -% (@ptrToInt(addr) + 5);
-                if(delta < 0x80000000 or delta >= 0xFFFFFFFF80000000) {
+                const delta = @intFromPtr(hook_target) -% (@intFromPtr(addr) + 5);
+                if (delta < 0x80000000 or delta >= 0xFFFFFFFF80000000) {
                     var instr_bytes: [5]u8 = undefined;
                     instr_bytes[0] = 0xE9; // jmp imm32
-                    std.mem.writeIntLittle(u32, instr_bytes[1..], @truncate(u32, delta));
-                    std.mem.copy(u8, @ptrCast([*]u8, addr)[0..instr_bytes.len], &instr_bytes);
-                } else if(@ptrToInt(hook_target) < 0x100000000) {
+                    std.mem.writeInt(u32, instr_bytes[1..], @truncate(delta), .little);
+                    @memcpy(@as([*]u8, @ptrCast(addr))[0..instr_bytes.len], &instr_bytes);
+                } else if (@intFromPtr(hook_target) < 0x100000000) {
                     var instr_bytes: [6]u8 = undefined;
                     instr_bytes[0] = 0x68; // push imm32
-                    std.mem.writeIntLittle(u32, instr_bytes[1..5], @truncate(u32, @ptrToInt(hook_target)));
+                    std.mem.writeInt(u32, instr_bytes[1..5], @truncate(@intFromPtr(hook_target)), .little);
                     instr_bytes[5] = 0xC3; // ret
-                    std.mem.copy(u8, @ptrCast([*]u8, addr)[0..instr_bytes.len], &instr_bytes);
+                    @memcpy(@as([*]u8, @ptrCast(addr))[0..instr_bytes.len], &instr_bytes);
                 } else {
                     var instr_bytes: [12]u8 = undefined;
-                    std.mem.copy(u8, &instr_bytes, "\x48\xB8XXXXXXXX\xFF\xE0"); // movabs rax, hook_target; jmp rax
-                    std.mem.writeIntLittle(u64, instr_bytes[2..10], @ptrToInt(hook_target));
-                    std.mem.copy(u8, @ptrCast([*]u8, addr)[0..instr_bytes.len], &instr_bytes);
+                    @memcpy(&instr_bytes, "\x48\xB8XXXXXXXX\xFF\xE0"); // movabs rax, hook_target; jmp rax
+                    std.mem.writeInt(u64, instr_bytes[2..10], @intFromPtr(hook_target), .little);
+                    @memcpy(@as([*]u8, @ptrCast(addr))[0..instr_bytes.len], &instr_bytes);
                 }
             },
             .real => |real_target| {
@@ -2034,18 +2029,18 @@ fn wrapped(fptr: anytype, hook: bool) WrappedFunction {
     const f = @typeInfo(@TypeOf(fptr.*)).Fn;
     std.debug.assert(f.calling_convention == .Win64);
     return .{
-        .hooked = if(hook) false else null,
-        .fptr = @ptrCast(*const anyopaque, f),
+        .hooked = if (hook) false else null,
+        .fptr = @as(*const anyopaque, @ptrCast(f)),
     };
 }
 
 const ntdll = @import("ntdll.zig");
 
 fn stub(comptime str: []const u8) *const anyopaque {
-    return @ptrCast(*const anyopaque, struct {
+    return @as(*const anyopaque, @ptrCast(struct {
         fn f() callconv(.Win64) ntdll.NTSTATUS {
             log("Undefined, stub: " ++ str, .{});
             return .SUCCESS;
         }
-    }.f);
+    }.f));
 }

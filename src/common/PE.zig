@@ -1,4 +1,6 @@
 const std = @import("std");
+const builtin = @import("builtin");
+const native_endian = @import("builtin").cpu.arch.endian();
 
 const log = @import("log.zig").scoped(.PE);
 
@@ -23,8 +25,7 @@ pub fn load(file: std.fs.File, comptime ResolveContext: type) !usize {
 
     const file_size = try file.getEndPos();
     const file_data = try file.readToEndAllocOptions(std.heap.page_allocator, file_size, file_size, 1, null);
-    var coff_file = std.coff.Coff{.allocator = undefined};
-    try coff_file.parse(file_data);
+    var coff_file = try std.coff.Coff.init(file_data, false);
 
     var min_addr: usize = std.math.maxInt(usize);
     var max_addr: usize = std.math.minInt(usize);
@@ -47,28 +48,28 @@ pub fn load(file: std.fs.File, comptime ResolveContext: type) !usize {
     }
 
     const virt_size = ((max_addr - min_addr) + 0xFFF) & ~@as(usize, 0xFFF);
-    const vmem = try std.os.mmap(
-        @intToPtr([*]align(4096) u8, min_addr + coff_file.getImageBase()),
+    const vmem = try std.posix.mmap(
+        @as([*]align(4096) u8, @ptrFromInt(min_addr + coff_file.getImageBase())),
         virt_size,
-        std.os.PROT.NONE,
-        std.os.MAP.ANONYMOUS | std.os.MAP.PRIVATE,
+        std.posix.PROT.NONE,
+        .{ .TYPE = .PRIVATE, .ANONYMOUS = true },
         0,
         0,
     );
-    errdefer std.os.munmap(vmem);
+    errdefer std.posix.munmap(vmem);
 
-    const load_delta = @ptrToInt(vmem.ptr) -% (min_addr + coff_file.getImageBase());
-    log("Allocated executable space at 0x{X} (delta 0x{X})", .{ @ptrToInt(vmem.ptr), load_delta });
+    const load_delta = @intFromPtr(vmem.ptr) -% (min_addr + coff_file.getImageBase());
+    log("Allocated executable space at 0x{X} (delta 0x{X})", .{ @intFromPtr(vmem.ptr), load_delta });
 
     for (coff_file.getSectionHeaders()) |header| {
         const section_mem = blk: {
             var result = vmem[header.virtual_address - min_addr ..][0..header.virtual_size];
             result.len += 0xFFF;
             result.len &= ~@as(usize, 0xFFF);
-            break :blk @alignCast(4096, result);
+            break :blk @as([]align(4096) u8, @alignCast(result));
         };
 
-        try std.os.mprotect(section_mem, std.os.PROT.READ | std.os.PROT.WRITE);
+        try std.posix.mprotect(section_mem, std.posix.PROT.READ | std.posix.PROT.WRITE);
 
         //if(header.characteristics & 0x00000040 != 0) { // Section contains initialized data
         const read = try file.preadAll(
@@ -81,25 +82,25 @@ pub fn load(file: std.fs.File, comptime ResolveContext: type) !usize {
         }
         //}
         //if(header.characteristics & 0x00000080 != 0) { // Section contains uninitialized data
-        std.mem.set(u8, section_mem[header.size_of_raw_data..], 0);
+        @memset(section_mem[header.size_of_raw_data..], 0);
         //}
     }
 
     log("File loaded", .{});
 
-    if (@ptrToInt(vmem.ptr) != min_addr) {
+    if (@intFromPtr(vmem.ptr) != min_addr) {
         log("File was loaded at an offset, doing relocations", .{});
 
         const relocs_entry = coff_file.getDataDirectories()[IMAGE_DIRECTORY_ENTRY_BASERELOC];
         var reloc_block_bytes = vmem[relocs_entry.virtual_address - min_addr ..][0..relocs_entry.size];
 
         while (reloc_block_bytes.len >= 8) {
-            const current_block_base_addr = @as(usize, std.mem.readIntNative(u32, reloc_block_bytes[0..4]));
-            const num_block_bytes = std.mem.readIntNative(u32, reloc_block_bytes[4..8]);
+            const current_block_base_addr = @as(usize, std.mem.readInt(u32, reloc_block_bytes[0..4], native_endian));
+            const num_block_bytes = std.mem.readInt(u32, reloc_block_bytes[4..8], native_endian);
 
             for (std.mem.bytesAsSlice(u16, reloc_block_bytes[8..num_block_bytes])) |reloc| {
-                const block_offset = @as(usize, @truncate(u12, reloc));
-                const reloc_type = @truncate(u4, reloc >> 12);
+                const block_offset = @as(u16, @truncate(reloc));
+                const reloc_type: u4 = @truncate(reloc >> 12);
 
                 const reloc_addr = current_block_base_addr + block_offset;
                 const reloc_bytes = vmem[reloc_addr - min_addr ..];
@@ -217,16 +218,17 @@ pub fn load(file: std.fs.File, comptime ResolveContext: type) !usize {
             if (desc.dll_name_addr == 0 or desc.import_addr_table_addr == 0) {
                 break;
             }
-            const dll_name = std.mem.span(@ptrCast([*:0]u8, &vmem[desc.dll_name_addr - min_addr]));
-            const import_name_table = std.mem.span(@ptrCast([*:0]u64, @alignCast(8, &vmem[desc.import_name_table - min_addr])));
-            const import_addr_table = @ptrCast([*]u64, @alignCast(8, &vmem[desc.import_addr_table_addr - min_addr]));
-            for (import_name_table) |import_name_base, i| {
-                const import_name = std.mem.span(@ptrCast([*:0]u8, &vmem[import_name_base + 2 - min_addr]));
+            const dll_name = std.mem.span(@as([*:0]u8, @ptrCast(&vmem[desc.dll_name_addr - min_addr])));
+
+            const import_name_table = std.mem.span(@as([*:0]align(8) u64, @ptrCast(@alignCast(&vmem[desc.import_name_table - min_addr]))));
+            const import_addr_table = @as([*]align(8) u64, @ptrCast(@alignCast(&vmem[desc.import_addr_table_addr - min_addr])));
+            for (import_name_table, 0..) |import_name_base, i| {
+                const import_name = std.mem.span(@as([*:0]u8, @ptrCast(&vmem[import_name_base + 2 - min_addr])));
                 const sym = resolve_context.resolve(dll_name, import_name) orelse {
-                    log("Unresolved import '{s}' from '{s}'", .{import_name, dll_name});
+                    log("Unresolved import '{s}' from '{s}'", .{ import_name, dll_name });
                     return error.UnresolvedImport;
                 };
-                import_addr_table[i] = @ptrToInt(sym);
+                import_addr_table[i] = @intFromPtr(sym);
             }
         }
         log("Imports done", .{});
@@ -239,20 +241,20 @@ pub fn load(file: std.fs.File, comptime ResolveContext: type) !usize {
             break :blk;
         const export_descriptor_bytes = vmem[exports_entry.virtual_address - min_addr ..][0..exports_entry.size];
 
-        const num_functions = std.mem.readIntNative(u32, export_descriptor_bytes[0x14..0x18]);
-        const num_names = std.mem.readIntNative(u32, export_descriptor_bytes[0x18..0x1C]);
-        const addrs_base = std.mem.readIntNative(u32, export_descriptor_bytes[0x1C..0x20]);
-        const addrs = std.mem.bytesAsSlice(u32, vmem[addrs_base - min_addr..][0..num_functions*4]);
-        const names_base = std.mem.readIntNative(u32, export_descriptor_bytes[0x20..0x24]);
-        const names = std.mem.bytesAsSlice(u32, vmem[names_base - min_addr..][0..num_names*4]);
-        const ordinals_base = std.mem.readIntNative(u32, export_descriptor_bytes[0x24..0x28]);
-        const ordinals = std.mem.bytesAsSlice(u16, vmem[ordinals_base - min_addr..][0..num_names*2]);
+        const num_functions = std.mem.readInt(u32, export_descriptor_bytes[0x14..0x18], native_endian);
+        const num_names = std.mem.readInt(u32, export_descriptor_bytes[0x18..0x1C], native_endian);
+        const addrs_base = std.mem.readInt(u32, export_descriptor_bytes[0x1C..0x20], native_endian);
+        const addrs = std.mem.bytesAsSlice(u32, vmem[addrs_base - min_addr ..][0 .. num_functions * 4]);
+        const names_base = std.mem.readInt(u32, export_descriptor_bytes[0x20..0x24], native_endian);
+        const names = std.mem.bytesAsSlice(u32, vmem[names_base - min_addr ..][0 .. num_names * 4]);
+        const ordinals_base = std.mem.readInt(u32, export_descriptor_bytes[0x24..0x28], native_endian);
+        const ordinals = std.mem.bytesAsSlice(u16, vmem[ordinals_base - min_addr ..][0 .. num_names * 2]);
 
         // Literally who thought this was a good structure????
-        for(names) |name_rva, name_idx| {
+        for (names, 0..) |name_rva, name_idx| {
             const ordinal = ordinals[name_idx];
-            const name = std.mem.span(@ptrCast([*:0]u8, &vmem[name_rva - min_addr]));
-            const addr = @ptrCast(*anyopaque, &vmem[addrs[ordinal] - min_addr]);
+            const name = std.mem.span(@as([*:0]u8, @ptrCast(&vmem[name_rva - min_addr])));
+            const addr: *anyopaque = @ptrCast(&vmem[addrs[ordinal] - min_addr]);
             resolve_context.provide("ntdll.dll", name, addr);
         }
     }
@@ -262,27 +264,27 @@ pub fn load(file: std.fs.File, comptime ResolveContext: type) !usize {
             var result = vmem[header.virtual_address - min_addr ..][0..header.virtual_size];
             result.len += 0xFFF;
             result.len &= ~@as(usize, 0xFFF);
-            break :blk @alignCast(4096, result);
+            break :blk @as([]align(4096) u8, @alignCast(result));
         };
 
         if (header.flags.MEM_DISCARDABLE != 0) { // Section can be discarded after loading
-            log("Unmapping section at 0x{X} with size 0x{X}", .{ @ptrToInt(section_mem.ptr), section_mem.len });
-            std.os.munmap(section_mem);
+            log("Unmapping section at 0x{X} with size 0x{X}", .{ @intFromPtr(section_mem.ptr), section_mem.len });
+            std.posix.munmap(section_mem);
             continue;
         }
 
         const prot_flags = blk: {
-            var result: u32 = std.os.PROT.READ;
+            var result: u32 = std.posix.PROT.READ;
             if (header.flags.MEM_EXECUTE != 0)
-                result |= std.os.PROT.EXEC;
+                result |= std.posix.PROT.EXEC;
             if (header.flags.MEM_WRITE != 0)
-                result |= std.os.PROT.WRITE;
+                result |= std.posix.PROT.WRITE;
             break :blk result;
         };
 
-        log("Keeping section at 0x{X} with size 0x{X}, new prot flags: 0x{X}", .{ @ptrToInt(section_mem.ptr), section_mem.len, prot_flags });
+        log("Keeping section at 0x{X} with size 0x{X}, new prot flags: 0x{X}", .{ @intFromPtr(section_mem.ptr), section_mem.len, prot_flags });
 
-        try std.os.mprotect(
+        try std.posix.mprotect(
             section_mem,
             prot_flags,
         );

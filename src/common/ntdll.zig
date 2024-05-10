@@ -9,7 +9,7 @@ const log = @import("log.zig").scoped(.ntdll);
 var rtl_global_heap = std.heap.GeneralPurposeAllocator(.{}){ .backing_allocator = std.heap.page_allocator };
 
 pub fn RtlAllocateHeap(heap_handle: ?*anyopaque, flags: rt.ULONG, size: rt.SIZE_T) callconv(.Win64) ?*anyopaque {
-    log("RtlAllocateHeap(handle=0x{X}, flags=0x{X}, size=0x{X})", .{ @ptrToInt(heap_handle), flags, size });
+    log("RtlAllocateHeap(handle=0x{X}, flags=0x{X}, size=0x{X})", .{ @intFromPtr(heap_handle), flags, size });
     if (heap_handle) |_| {
         @panic("RtlAllocateHeap with handle");
     }
@@ -19,13 +19,13 @@ pub fn RtlAllocateHeap(heap_handle: ?*anyopaque, flags: rt.ULONG, size: rt.SIZE_
         return null;
     }).ptr;
 
-    log("RtlAllocateHeap -> 0x{X}", .{@ptrToInt(retval)});
+    log("RtlAllocateHeap -> 0x{X}", .{@intFromPtr(retval)});
     return retval;
 }
 
 pub fn RtlFreeHeap(heap_handle: ?*anyopaque, flags: rt.ULONG, base_addr: ?[*]u8) callconv(.Win64) rt.LOGICAL {
     // TODO: Don't just leak memory here
-    log("RtlFreeHeap(handle=0x{X}, flags = 0x{X}, ptr=0x{X})", .{ @ptrToInt(heap_handle), flags, @ptrToInt(base_addr) });
+    log("RtlFreeHeap(handle=0x{X}, flags = 0x{X}, ptr=0x{X})", .{ @intFromPtr(heap_handle), flags, @intFromPtr(base_addr) });
     return rt.TRUE;
 }
 
@@ -35,7 +35,7 @@ pub fn NtSetInformationProcess(
     process_information: rt.PVOID,
     process_information_length: rt.ULONG,
 ) callconv(.Win64) NTSTATUS {
-    log("NtSetInformationProcess(handle=0x{X}, class={s}, info=0x{x}, length={d})", .{ process_handle, @tagName(process_information_class), @ptrToInt(process_information), process_information_length });
+    log("NtSetInformationProcess(handle=0x{X}, class={s}, info=0x{x}, length={d})", .{ process_handle, @tagName(process_information_class), @intFromPtr(process_information), process_information_length });
     return .SUCCESS;
 }
 
@@ -45,7 +45,7 @@ pub fn RtlSetHeapInformation(
     heap_information: rt.PVOID,
     heap_information_length: rt.SIZE_T,
 ) callconv(.Win64) NTSTATUS {
-    log("RtlSetHeapInformation(handle=0x{X}, class={s}, info=0x{x}, length={d})", .{ @ptrToInt(heap_handle), @tagName(heap_information_class), @ptrToInt(heap_information), heap_information_length });
+    log("RtlSetHeapInformation(handle=0x{X}, class={s}, info=0x{x}, length={d})", .{ @intFromPtr(heap_handle), @tagName(heap_information_class), @intFromPtr(heap_information), heap_information_length });
     return .SUCCESS;
 }
 
@@ -57,7 +57,7 @@ pub fn EtwEventRegister(
     callback_context: rt.PVOID,
     result_handle: ?*REGHANDLE,
 ) callconv(.Win64) Error {
-    log("EtwEventRegister(guid={any}, callback=0x{X}, context=0x{x}, result_out=0x{X})", .{ provider_id, @ptrToInt(callback), @ptrToInt(callback_context), @ptrToInt(result_handle) });
+    log("EtwEventRegister(guid={any}, callback=0x{X}, context=0x{x}, result_out=0x{X})", .{ provider_id, @intFromPtr(callback), @intFromPtr(callback_context), @intFromPtr(result_handle) });
     return .SUCCESS;
 }
 
@@ -99,14 +99,14 @@ pub fn EtwRegisterTraceGuidsW(
     registration_handle: ?*TraceHandle,
 ) callconv(.Win64) Error {
     log("EtwRegisterTraceGuidsW(req_addr=0x{X}, req_cont=0x{X}, cguid={any}, guidcnt={}, tguid={any}, imgp={}, mrname={}, rhandle=0x{X})", .{
-        @ptrToInt(request_address),
-        @ptrToInt(request_context),
+        @intFromPtr(request_address),
+        @intFromPtr(request_context),
         control_guid,
         guid_count,
         trace_guid_registration,
         rt.fmt(m_of_image_path),
         rt.fmt(m_of_resource_name),
-        @ptrToInt(registration_handle),
+        @intFromPtr(registration_handle),
     });
     return .SUCCESS;
 }
@@ -117,7 +117,7 @@ pub fn TpAllocPool(
 ) callconv(.Win64) NTSTATUS {
     const result = opt_result orelse return .INVALID_PARAMETER;
     result.* = tp.allocPool() catch return .NO_MEMORY;
-    log("TpAllocPool(0x{X}) -> 0x{X}", .{@ptrToInt(result), @ptrToInt(result.*)});
+    log("TpAllocPool(0x{X}) -> 0x{X}", .{ @intFromPtr(result), @intFromPtr(result.*) });
     _ = reserved;
     return .SUCCESS;
 }
@@ -128,7 +128,7 @@ pub fn TpAllocWork(
     context: tp.Context,
     env: tp.Environment,
 ) callconv(.Win64) NTSTATUS {
-    log("TpAllocWork(0x{X}, 0x{X})", .{@ptrToInt(out_opt), @ptrToInt(work_opt)});
+    log("TpAllocWork(0x{X}, 0x{X})", .{ @intFromPtr(out_opt), @intFromPtr(work_opt) });
     const out = out_opt orelse return .INVALID_PARAMETER;
     const work = work_opt orelse return .INVALID_PARAMETER;
     out.* = tp.allocWork(work, context, env) catch return .NO_MEMORY;
@@ -148,7 +148,7 @@ pub fn TpPostWork(
 pub fn TpWaitForWork(
     work_opt: ?*tp.TPWork,
 ) callconv(.Win64) NTSTATUS {
-    log("TpWaitForWork(0x{X})", .{@ptrToInt(work_opt)});
+    log("TpWaitForWork(0x{X})", .{@intFromPtr(work_opt)});
     (work_opt orelse return .INVALID_PARAMETER).finish_sema.wait();
     return .SUCCESS;
 }
@@ -156,8 +156,8 @@ pub fn TpWaitForWork(
 pub fn TpReleaseWork(
     work_opt: ?*tp.TPWork,
 ) callconv(.Win64) NTSTATUS {
-    log("TpReleaseWork(0x{X})", .{@ptrToInt(work_opt)});
-    if(false) tp.releaseWork(work_opt orelse return .INVALID_PARAMETER);
+    log("TpReleaseWork(0x{X})", .{@intFromPtr(work_opt)});
+    if (false) tp.releaseWork(work_opt orelse return .INVALID_PARAMETER);
     return .SUCCESS;
 }
 
@@ -166,9 +166,9 @@ pub fn TpSetPoolMinThreads(
     min_threads: rt.ULONG,
 ) callconv(.Win64) NTSTATUS {
     const p = pool orelse return .INVALID_PARAMETER;
-    const num_threads = std.math.max(min_threads, 1);
+    const num_threads = @max(min_threads, 1);
     log("TpSetPoolMinThreads(0x{X}, {d} (treated as {d}))", .{
-        @ptrToInt(p),
+        @intFromPtr(p),
         min_threads,
         num_threads,
     });
@@ -240,8 +240,7 @@ pub fn RtlInitUnicodeString(
     }
 }
 
-pub fn RtlGetNtSystemRoot(
-) callconv(.Win64) [*:0]const u16 {
+pub fn RtlGetNtSystemRoot() callconv(.Win64) [*:0]const u16 {
     return std.unicode.utf8ToUtf16LeStringLiteral("C:\\");
 }
 
@@ -266,12 +265,12 @@ pub fn RtlCreateTagHeap(
 }
 
 fn giveSystemInfo(ret_ptr: rt.PVOID, ret_max_size: rt.ULONG, ret_out_size: ?*rt.ULONG, comptime T: type) NTSTATUS {
-    const copy_size = std.math.min(@sizeOf(T), ret_max_size);
+    const copy_size = @min(@sizeOf(T), ret_max_size);
     if (ret_out_size) |out|
-        out.* = @intCast(rt.ULONG, @sizeOf(T));
+        out.* = @intCast(@sizeOf(T));
 
     if (ret_ptr) |p| {
-        @memcpy(@ptrCast([*]u8, p), @intToPtr([*]const u8, @ptrToInt(&T{})), copy_size);
+        @memcpy(@as([*]u8, @ptrCast(p))[0..copy_size], @as([*]const u8, @ptrFromInt(@intFromPtr(&T{}))));
     }
 
     if (ret_max_size < @sizeOf(T)) {
@@ -289,8 +288,8 @@ pub fn NtQuerySystemInformation(
     ret_max_size: rt.ULONG,
     ret_out_size: ?*rt.ULONG,
 ) callconv(.Win64) NTSTATUS {
-    log("NtQuerySystemInformation(class=0x{X})", .{@enumToInt(class)});
-    log("NtQuerySystemInformation(class=0x{X} ('{s}'), max_size=0x{X})", .{ @enumToInt(class), @tagName(class), ret_max_size });
+    log("NtQuerySystemInformation(class=0x{X})", .{@intFromEnum(class)});
+    log("NtQuerySystemInformation(class=0x{X} ('{s}'), max_size=0x{X})", .{ @intFromEnum(class), @tagName(class), ret_max_size });
     return switch (class) {
         .Basic => giveSystemInfo(ret_ptr, ret_max_size, ret_out_size, extern struct {
             reserved: rt.ULONG = 0,
@@ -363,42 +362,42 @@ comptime {
 pub fn RtlInitializeSRWLock(
     lock: ?*Mutex,
 ) callconv(.Win64) void {
-    //log("RtlInitializeSRWLock(0x{X})", .{@ptrToInt(lock)});
+    //log("RtlInitializeSRWLock(0x{X})", .{@intFromPtr(lock)});
     lock.?.* = .{};
 }
 
 pub fn RtlAcquireSRWLockExclusive(
     lock: ?*Mutex,
 ) callconv(.Win64) void {
-    log("RtlAcquireSRWLockExclusive(0x{X})", .{@ptrToInt(lock)});
+    log("RtlAcquireSRWLockExclusive(0x{X})", .{@intFromPtr(lock)});
     lock.?.lock();
 }
 
 pub fn RtlReleaseSRWLockExclusive(
     lock: ?*Mutex,
 ) callconv(.Win64) void {
-    log("RtlReleaseSRWLockExclusive(0x{X})", .{@ptrToInt(lock)});
+    log("RtlReleaseSRWLockExclusive(0x{X})", .{@intFromPtr(lock)});
     lock.?.unlock();
 }
 
 pub fn RtlAcquireSRWLockShared(
     lock: ?*Mutex,
 ) callconv(.Win64) void {
-    log("RtlAcquireSRWLockShared(0x{X})", .{@ptrToInt(lock)});
+    log("RtlAcquireSRWLockShared(0x{X})", .{@intFromPtr(lock)});
     lock.?.lock();
 }
 
 pub fn RtlReleaseSRWLockShared(
     lock: ?*Mutex,
 ) callconv(.Win64) void {
-    log("RtlReleaseSRWLockShared(0x{X})", .{@ptrToInt(lock)});
+    log("RtlReleaseSRWLockShared(0x{X})", .{@intFromPtr(lock)});
     lock.?.unlock();
 }
 
 pub fn RtlInitializeConditionVariable(
     out_cvar: ?*ConditionVariable,
 ) callconv(.Win64) void {
-    log("RtlInitializeConditionVariable(0x{X})", .{@ptrToInt(out_cvar)});
+    log("RtlInitializeConditionVariable(0x{X})", .{@intFromPtr(out_cvar)});
     out_cvar.?.* = .{};
 }
 
@@ -410,10 +409,10 @@ pub fn RtlSleepConditionVariableSRW(
 ) callconv(.Win64) NTSTATUS {
     log("RtlSleepConditionVariableSRW({d})", .{timeout});
     _ = flags;
-    if(timeout == 0) {
+    if (timeout == 0) {
         condvar.?.timedWait(lock.?, ~@as(usize, 0)) catch return .INVALID_PARAMETER;
     } else {
-        condvar.?.timedWait(lock.?, @intCast(usize, timeout)) catch return .INVALID_PARAMETER;
+        condvar.?.timedWait(lock.?, @intCast(timeout)) catch return .INVALID_PARAMETER;
     }
     return .SUCCESS;
 }
@@ -450,7 +449,7 @@ pub fn NtRaiseHardError(
 ) callconv(.Win64) NTSTATUS {
     _ = params;
     _ = unicode_string_parameter_mask;
-    log("NtRaiseHardError(status=0x{X}, ropt=0x{X})", .{ @enumToInt(error_status), @enumToInt(response_option) });
+    log("NtRaiseHardError(status=0x{X}, ropt=0x{X})", .{ @intFromEnum(error_status), @intFromEnum(response_option) });
     log("NtRaiseHardError(status={s}, params={d}, ropt={s})", .{ @tagName(error_status), num_params, @tagName(response_option) });
     if (response) |r| r.* = .NotHandled;
     return .SUCCESS;
@@ -461,11 +460,10 @@ pub fn NtTerminateProcess(
     exit_status: NTSTATUS,
 ) callconv(.Win64) NTSTATUS {
     log("NtTerminateProcess(handle=0x{X}, status='{s}')", .{ process_handle, @tagName(exit_status) });
-    std.os.exit(0);
+    std.process.exit(0);
 }
 
-pub fn RtlNormalizeProcessParams(
-) callconv(.Win64) NTSTATUS {
+pub fn RtlNormalizeProcessParams() callconv(.Win64) NTSTATUS {
     log("RtlNormalizeProcessParams: Nothing to do under champagne", .{});
     return .SUCCESS;
 }
@@ -490,7 +488,7 @@ pub fn NtOpenDirectoryObject(
     log("NtOpenDirectoryObject({any})", .{opt_object_attributes});
     const n = resovleAttrs(opt_object_attributes, true) orelse return .INVALID_PARAMETER;
     defer vfs.close(n);
-    if(opt_dir_handle) |handle_out| {
+    if (opt_dir_handle) |handle_out| {
         handle_out.* = vfs.handle(n);
     }
     _ = desired_access;
@@ -506,10 +504,10 @@ pub fn NtCreateMutant(
     const n = resovleAttrs(opt_object_attributes, true) orelse return .INVALID_PARAMETER;
     defer vfs.close(n);
     const mutex = n.get(.mutex) orelse return .INVALID_PARAMETER;
-    if(initial_owner != 0) {
+    if (initial_owner != 0) {
         mutex.lock();
     }
-    if(opt_handle) |out| {
+    if (opt_handle) |out| {
         out.* = vfs.handle(n);
     }
     _ = desired_access;
@@ -525,7 +523,7 @@ pub fn NtOpenKey(
     const n = resovleAttrs(opt_object_attributes, true) orelse return .INVALID_PARAMETER;
     defer vfs.close(n);
     _ = n.get(.dir);
-    if(opt_handle) |out| {
+    if (opt_handle) |out| {
         out.* = vfs.handle(n);
     }
     _ = desired_access;
@@ -545,7 +543,7 @@ pub fn NtCreateKey(
     const n = resovleAttrs(opt_object_attributes, true) orelse return .INVALID_PARAMETER;
     defer vfs.close(n);
     _ = n.get(.dir);
-    if(opt_handle) |out| {
+    if (opt_handle) |out| {
         out.* = vfs.handle(n);
     }
     _ = desired_access;
@@ -565,7 +563,7 @@ pub fn NtCreateDirectoryObject(
     const n = resovleAttrs(opt_object_attributes, true) orelse return .INVALID_PARAMETER;
     defer vfs.close(n);
     _ = n.get(.dir);
-    if(opt_handle) |out| {
+    if (opt_handle) |out| {
         out.* = vfs.handle(n);
     }
     _ = desired_access;
@@ -625,18 +623,18 @@ pub fn NtCreateSection(
     allocation_attributes: rt.ULONG,
     file_handle: rt.ULONG,
 ) callconv(.Win64) NTSTATUS {
-    const size = @intCast(usize, (max_size orelse return .INVALID_PARAMETER).*);
+    const size: usize = @intCast((max_size orelse return .INVALID_PARAMETER).*);
     _ = desired_access;
     _ = section_page_protection;
     _ = allocation_attributes;
-    log("STUB: NtCreateSection({any}, 0x{X}, 0x{X})", .{opt_object_attributes, file_handle, size});
+    log("STUB: NtCreateSection({any}, 0x{X}, 0x{X})", .{ opt_object_attributes, file_handle, size });
     std.debug.assert(opt_object_attributes == null or opt_object_attributes.?.name == null);
     std.debug.assert(file_handle == 0);
-    if(opt_handle) |h| {
-        h.* = @intCast(rt.HANDLE, std.os.memfd_createZ("NtCreateSection", 0) catch return .NO_MEMORY);
-        log("-> Returning linux memfd {d} with size 0x{X}", .{h.*, size});
-        std.os.ftruncate(@intCast(i32, h.*), size) catch unreachable;
-        h.* |= @intCast(rt.HANDLE, size << 32);
+    if (opt_handle) |h| {
+        h.* = @intCast(std.posix.memfd_createZ("NtCreateSection", 0) catch return .NO_MEMORY);
+        log("-> Returning linux memfd {d} with size 0x{X}", .{ h.*, size });
+        std.posix.ftruncate(@intCast(h.*), size) catch unreachable;
+        h.* |= @intCast(size << 32);
     } else {
         unreachable;
     }
@@ -666,17 +664,17 @@ pub fn NtAllocateVirtualMemory(
 
     base_addr.* = rt.alignPageUp(base_addr.*);
 
-    const result = std.os.mmap(
-        @intToPtr(?[*]align(0x1000) u8, base_addr.*),
+    const result = std.posix.mmap(
+        @as(?[*]align(0x1000) u8, @ptrFromInt(base_addr.*)),
         region_size.*,
-        std.os.PROT.READ | std.os.PROT.WRITE,
-        std.os.MAP.ANONYMOUS | std.os.MAP.PRIVATE,
+        std.posix.PROT.READ | std.posix.PROT.WRITE,
+        .{ .TYPE = .PRIVATE, .ANONYMOUS = true },
         -1,
         0,
     ) catch return .NO_MEMORY;
 
     region_size.* = result.len;
-    base_addr.* = @ptrToInt(result.ptr);
+    base_addr.* = @intFromPtr(result.ptr);
 
     log("NtAllocateVirtualMemory -> 0x{}", .{base_addr.*});
 
@@ -696,45 +694,45 @@ pub fn NtMapViewOfSection(
     protect: rt.ULONG,
 ) callconv(.Win64) NTSTATUS {
     const base_addr = base_addr_opt orelse return .INVALID_PARAMETER;
-    const section_offset_value = if(section_offset_opt) |so| so.* else 0;
+    const section_offset_value = if (section_offset_opt) |so| so.* else 0;
 
     _ = process_handle;
 
-    const fd = @truncate(u32, section_handle);
-    const view_size_value = rt.alignPageUp(@truncate(u32, section_handle >> 32));
+    const fd: u32 = @truncate(section_handle);
+    const view_size_value = rt.alignPageUp(@truncate(section_handle >> 32));
 
     log("NtMapViewOfSection(fd=0x{X}, base=0x{X}, size=0x{X}, offset=0x{X})", .{
         fd,
-        @ptrToInt(base_addr.*),
+        @intFromPtr(base_addr.*),
         view_size_value,
         section_offset_value,
     });
 
-    const mem = std.os.mmap(
+    const mem = std.posix.mmap(
         base_addr.*,
         view_size_value,
-        std.os.PROT.READ | std.os.PROT.WRITE,
-        std.os.MAP.SHARED,
-        @intCast(i32, fd),
-        @intCast(usize, section_offset_value),
+        std.posix.PROT.READ | std.posix.PROT.WRITE,
+        .{ .TYPE = .SHARED },
+        @intCast(fd),
+        @intCast(section_offset_value),
     ) catch return .NO_MEMORY;
 
     section_view_map.putNoClobber(
         section_view_alloc.allocator(),
-        @ptrToInt(mem.ptr),
+        @intFromPtr(mem.ptr),
         view_size_value,
     ) catch {
-        std.os.munmap(mem);
+        std.posix.munmap(mem);
         return .NO_MEMORY;
     };
 
-    log("-> returning mmap ptr 0x{x}", .{@ptrToInt(mem.ptr)});
+    log("-> returning mmap ptr 0x{x}", .{@intFromPtr(mem.ptr)});
     base_addr.* = mem.ptr;
-    if(section_offset_opt) |so| {
+    if (section_offset_opt) |so| {
         so.* = section_offset_value;
     }
-    if(view_size_opt) |sz| {
-        sz.* = @intCast(u32, view_size_value);
+    if (view_size_opt) |sz| {
+        sz.* = @intCast(view_size_value);
     }
 
     _ = protect;
@@ -752,10 +750,10 @@ pub fn NtUnmapViewOfSection(
 ) callconv(.Win64) NTSTATUS {
     _ = process_handle;
     log("NtUnmapViewOfSection(0x{X})", .{base_addr});
-    if(section_view_map.get(base_addr)) |size| {
+    if (section_view_map.get(base_addr)) |size| {
         log("-> Mapping of size 0x{X} found", .{size});
         std.debug.assert(section_view_map.remove(base_addr));
-        std.os.munmap(@intToPtr([*]align(0x1000)u8, base_addr)[0..size]);
+        std.posix.munmap(@as([*]align(0x1000) u8, @ptrFromInt(base_addr))[0..size]);
         return .SUCCESS;
     }
     log("-> No mapping found!!", .{});
@@ -766,7 +764,7 @@ pub fn NtDeleteValueKey(
     key_handle: rt.HANDLE,
     value_name: ?*rt.UnicodeString,
 ) callconv(.Win64) NTSTATUS {
-    log("STUB: NtDeleteValueKey(0x{X}, {any})", .{key_handle, value_name});
+    log("STUB: NtDeleteValueKey(0x{X}, {any})", .{ key_handle, value_name });
     return .SUCCESS;
 }
 
@@ -778,23 +776,23 @@ pub fn NtSetValueKey(
     data: rt.PVOID,
     data_size: rt.ULONG,
 ) callconv(.Win64) NTSTATUS {
-    log("STUB: NtSetValueKey(0x{X}, {any}, {s})", .{key_handle, value_name_opt, @tagName(kind)});
+    log("STUB: NtSetValueKey(0x{X}, {any}, {s})", .{ key_handle, value_name_opt, @tagName(kind) });
     const key = vfs.openHandle(key_handle);
     defer vfs.close(key);
     const dir = key.get(.dir) orelse return .INVALID_PARAMETER;
     const value_name = value_name_opt orelse return .INVALID_PARAMETER;
     const value = vfs.resolve16In(dir, value_name.chars() orelse return .INVALID_PARAMETER, true) catch return .NO_MEMORY;
-    var u8dbgbuf: [4096]u8 = undefined;
+    const u8dbgbuf: [4096]u8 = undefined;
     _ = u8dbgbuf;
 
-    switch(kind) {
+    switch (kind) {
         .Symlink => {
-            const data16 = @ptrCast([*]const u16, @alignCast(2, data))[0..@divExact(data_size, 2)];
+            const data16 = @as([*]align(2) const u16, @ptrCast(@alignCast(data)))[0..@divExact(data_size, 2)];
             //log("-> Link value: '{s}'", .{u8dbgbuf[0..std.unicode.utf16leToUtf8(&u8dbgbuf, data16) catch unreachable]});
             value.setSymlinkDyn(data16) catch return .NO_MEMORY;
         },
         .String => {
-            const data16 = @ptrCast([*]const u16, @alignCast(2, data))[0..@divExact(data_size, 2)];
+            const data16 = @as([*]align(2) const u16, @ptrCast(@alignCast(data)))[0..@divExact(data_size, 2)];
             //log("-> String value: '{s}'", .{u8dbgbuf[0..std.unicode.utf16leToUtf8(&u8dbgbuf, data16) catch unreachable]});
             value.setStringDyn(data16) catch return .NO_MEMORY;
         },
@@ -815,7 +813,7 @@ pub fn NtQueryValueKey(
     _ = info;
     _ = info_capacity;
     _ = result_len;
-    log("STUB: NtQueryValueKey(0x{X}, {any}, {s})", .{key_handle, value_name_opt, @tagName(information_class)});
+    log("STUB: NtQueryValueKey(0x{X}, {any}, {s})", .{ key_handle, value_name_opt, @tagName(information_class) });
     return .SUCCESS;
 }
 
@@ -823,7 +821,7 @@ fn resovleAttrs(attrs_opt: ?*ObjectAttributes, create_deep: bool) ?*vfs.Director
     const attrs = attrs_opt orelse return null;
     const name = attrs.name orelse return null;
     const path = name.chars() orelse return null;
-    if(attrs.root_dir == 0) {
+    if (attrs.root_dir == 0) {
         return vfs.resolve16(path, create_deep) catch return null;
     } else {
         const root = vfs.openHandle(attrs.root_dir);
@@ -847,7 +845,7 @@ pub fn NtOpenSymbolicLinkObject(
     const link = resovleAttrs(opt_object_attributes, true) orelse return .INVALID_PARAMETER;
     defer vfs.close(link);
     _ = link.get(.symlink);
-    if(opt_handle) |oh| {
+    if (opt_handle) |oh| {
         oh.* = vfs.handle(link);
     }
     _ = desired_access;
@@ -863,17 +861,17 @@ pub fn NtQuerySymbolicLinkObject(
     const link_dirent = vfs.openHandle(link_handle);
     defer vfs.close(link_dirent);
     const link = link_dirent.get(.symlink) orelse @panic("Not a symlink!");
-    const buf_len = if(link_target_opt) |target| target.capacity else 0;
+    const buf_len = if (link_target_opt) |target| target.capacity else 0;
 
-    log("-> Valid symlink of length {d}, buffer size is {d}", .{link.len, buf_len});
+    log("-> Valid symlink of length {d}, buffer size is {d}", .{ link.len, buf_len });
 
-    if(out_length) |ol| ol.* = @intCast(rt.ULONG, link.len);
-    if(link.len > buf_len) return .BUFFER_TOO_SMALL;
+    if (out_length) |ol| ol.* = @intCast(link.len);
+    if (link.len > buf_len) return .BUFFER_TOO_SMALL;
 
     const link_target = link_target_opt orelse return .INVALID_PARAMETER;
     const data_ptr = link_target.buffer orelse return .INVALID_PARAMETER;
-    std.mem.copy(u16, data_ptr[0..link.len], link.*);
-    link_target.length = @intCast(u16, link.len);
+    @memcpy(data_ptr[0..link.len], link.*);
+    link_target.length = @intCast(link.len);
     return .SUCCESS;
 }
 
@@ -891,25 +889,25 @@ pub fn NtQueryDirectoryObject(
     std.debug.assert(return_single_entry != 0);
     const context = context_opt orelse return .INVALID_PARAMETER;
 
-    log("NtQueryDirectoryObject(0x{X}, 0x{X})", .{dir_handle, @ptrToInt(return_length)});
+    log("NtQueryDirectoryObject(0x{X}, 0x{X})", .{ dir_handle, @intFromPtr(return_length) });
 
     const dh = vfs.openHandle(dir_handle);
     defer vfs.close(dh);
 
-    if(restart_scan != 0) context.* = 0;
+    if (restart_scan != 0) context.* = 0;
     var idx = context.*;
 
     var dirent = dh.next;
-    while(idx != 0) : (idx -= 1) {
+    while (idx != 0) : (idx -= 1) {
         std.debug.assert(dirent != -1);
-        dirent = vfs.dirents.items[@intCast(usize, dirent)].next;
+        dirent = vfs.dirents.items[@intCast(dirent)].next;
     }
 
-    if(dirent == -1) {
+    if (dirent == -1) {
         return .INFO_NO_MORE_ENTRIES;
     }
 
-    if(true) @panic("TODO: NtQueryDirectoryObject ents");
+    if (true) @panic("TODO: NtQueryDirectoryObject ents");
 
     _ = buffer;
     _ = buf_len;
@@ -1118,7 +1116,7 @@ const AccessControlListEntry = extern struct {
 
     pub fn size(self: *@This()) u8 {
         inline for (@typeInfo(Type).Enum.fields) |f| {
-            if (@enumToInt(self.type) == f.value) {
+            if (@intFromEnum(self.type) == f.value) {
                 return @offsetOf(@This(), "u") + @sizeOf(@TypeOf(@field(self.u, f.name))) - @sizeOf(SecurityIdentifier) + @field(self.u, f.name).sid.size();
             }
             unreachable;
@@ -1133,7 +1131,7 @@ const AccessControlListEntry = extern struct {
     ) !void {
         _ = layout;
         _ = opts;
-        try writer.print("AccessControlListEntry{{ .flags = 0x{X}, .type = {d} }}", .{ self.flags, @enumToInt(self.type) });
+        try writer.print("AccessControlListEntry{{ .flags = 0x{X}, .type = {d} }}", .{ self.flags, @intFromEnum(self.type) });
     }
 };
 

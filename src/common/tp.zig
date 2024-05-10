@@ -3,7 +3,7 @@ const std = @import("std");
 var tp_alloc = std.heap.GeneralPurposeAllocator(.{}){ .backing_allocator = std.heap.page_allocator };
 var work_alloc = std.heap.GeneralPurposeAllocator(.{}){ .backing_allocator = std.heap.page_allocator };
 
-pub const Work = *const fn(
+pub const Work = *const fn (
     Environment,
     Context,
     *anyopaque,
@@ -35,7 +35,7 @@ const WorkQueue = struct {
         self.pool_mutex.lock();
         defer self.pool_mutex.unlock();
 
-        return @fieldParentPtr(TPWork, "queue_node", self.queue.pop() orelse unreachable);
+        return @fieldParentPtr("queue_node", self.queue.pop() orelse unreachable);
     }
 
     pub fn push(self: *@This(), w: *TPWork) void {
@@ -73,25 +73,25 @@ pub const ThreadPool = struct {
     queue: WorkQueue = .{},
 
     pub fn removeThreads(self: *@This(), num: usize) !void {
-        while(true) {
+        while (true) {
             const old_val = @atomicLoad(usize, &self.running_threads, .Acquire);
-            if(old_val < num) return error.NotEnoughThreadsToExit;
-            if(@cmpxchgWeak(usize, &self.running_threads, old_val, old_val - num, .AcqRel, .Acquire)) |_| {
+            if (old_val < num) return error.NotEnoughThreadsToExit;
+            if (@cmpxchgWeak(usize, &self.running_threads, old_val, old_val - num, .acq_rel, .Acquire)) |_| {
                 return doRemoveThreads(num);
             }
         }
     }
 
     pub fn addThreads(self: *@This(), num: usize) !void {
-        while(true) {
-            @atomicRmw(usize, &self.running_threads, .Add, num, .AcqRel);
+        while (true) {
+            @atomicRmw(usize, &self.running_threads, .Add, num, .acq_rel);
             return doAddThreads(num);
         }
     }
 
     pub fn setNumThreads(self: *@This(), num: usize) !void {
-        const old_running_threads = @atomicRmw(usize, &self.running_threads, .Xchg, num, .AcqRel);
-        if(old_running_threads < num) {
+        const old_running_threads = @atomicRmw(usize, &self.running_threads, .Xchg, num, .acq_rel);
+        if (old_running_threads < num) {
             return self.doAddThreads(num - old_running_threads);
         } else {
             return self.doRemoveThreads(old_running_threads - num);
@@ -112,15 +112,15 @@ pub const ThreadPool = struct {
 
     fn doRemoveThreads(self: *@This(), num: usize) !void {
         var i: usize = 0;
-        while(i < num) : (i += 1) {
+        while (i < num) : (i += 1) {
             try self.killOneThread();
         }
     }
 
     fn threadWorker(self: *@This()) void {
-        while(true) {
+        while (true) {
             const work = self.queue.pop();
-            if(work.work) |f| {
+            if (work.work) |f| {
                 f(
                     work.env,
                     work.context,
@@ -141,7 +141,7 @@ pub const ThreadPool = struct {
 
     fn doAddThreads(self: *@This(), num: usize) !void {
         var i: usize = 0;
-        while(i < num) : (i += 1) {
+        while (i < num) : (i += 1) {
             try self.startOneThread();
         }
     }

@@ -58,12 +58,12 @@ pub fn Fmt(comptime T: type) type {
                 LPCSTR, PWSTR, LPCWSTR => {
                     if (self.v) |v| {
                         const span = std.mem.span(v);
-                        try writer.print("(0x{X}) '", .{@ptrToInt(span.ptr)});
+                        try writer.print("(0x{X}) '", .{@intFromPtr(span.ptr)});
                         for (span) |chr| {
                             if (chr > 0x7F) {
                                 try writer.print("\\x{X:0>2}", .{chr});
                             } else {
-                                try writer.print("{c}", .{@truncate(u8, chr)});
+                                try writer.print("{c}", .{@as(u8, @truncate(chr))});
                             }
                         }
                         try writer.print("'", .{});
@@ -118,8 +118,8 @@ pub const UnicodeString = extern struct {
 
     pub fn initFromBuffer(buf: []WCHAR) UnicodeString {
         return .{
-            .length = @intCast(USHORT, buf.len << 1),
-            .capacity = @intCast(USHORT, buf.len << 1),
+            .length = @intCast(buf.len << 1),
+            .capacity = @intCast(buf.len << 1),
             .buffer = buf.ptr,
         };
     }
@@ -135,13 +135,13 @@ pub const UnicodeString = extern struct {
                 self.capacity << 1, // double capacity
             );
             self.buffer = (try alloc.realloc(self.buffer.?[0 .. self.capacity >> 1], new_capacity >> 1)).ptr;
-            self.capacity = @intCast(USHORT, new_capacity);
+            self.capacity = @intCast(new_capacity);
         }
     }
 
     pub fn appendAssumeCapacity(self: *@This(), appendage: []const WCHAR) void {
         std.mem.copy(WCHAR, self.buffer.?[self.length >> 1 .. (self.length >> 1) + appendage.len], appendage);
-        self.length += @intCast(USHORT, appendage.len << 1);
+        self.length += @intCast(appendage.len << 1);
     }
 
     pub fn append(self: *@This(), appendage: []const WCHAR, alloc: std.mem.Allocator) !void {
@@ -168,7 +168,7 @@ pub const UnicodeString = extern struct {
                 if (chr > 0x7F) {
                     try writer.print("\\x{X:0>2}", .{chr});
                 } else {
-                    try writer.print("{c}", .{@truncate(u8, chr)});
+                    try writer.print("{c}", .{@as(u8, @truncate(chr))});
                 }
             }
             try writer.print("'", .{});
@@ -255,15 +255,15 @@ var teb: TEB = .{
 const kuser_shared_data_addr = 0x7ffe0000;
 
 pub fn init(image_path_name: [:0]WCHAR, command_line: [:0]WCHAR) !void {
-    _ = try std.os.mmap(
-        @intToPtr([*]align(0x1000) u8, kuser_shared_data_addr),
+    _ = try std.posix.mmap(
+        @as([*]align(0x1000) u8, @ptrFromInt(kuser_shared_data_addr)),
         0x1000,
-        std.os.PROT.READ | std.os.PROT.WRITE,
-        std.os.MAP.FIXED | std.os.MAP.ANONYMOUS | std.os.MAP.PRIVATE,
+        std.posix.PROT.READ | std.posix.PROT.WRITE,
+        std.posix.MAP{ .FIXED = true, .ANONYMOUS = true, .TYPE = .PRIVATE },
         0,
         0,
     );
-    var kusd = @intToPtr(*KUserSharedData, kuser_shared_data_addr);
+    const kusd: *KUserSharedData = @ptrFromInt(kuser_shared_data_addr);
     kusd.* = .{};
 
     teb.peb = &peb;
@@ -271,7 +271,7 @@ pub fn init(image_path_name: [:0]WCHAR, command_line: [:0]WCHAR) !void {
 
     asm volatile ("WRGSBASE %[teb]"
         :
-        : [teb] "r" (@ptrToInt(&teb)),
+        : [teb] "r" (@intFromPtr(&teb)),
     );
 
     pparam.image_path_name = UnicodeString.initFromBuffer(image_path_name);
@@ -280,5 +280,5 @@ pub fn init(image_path_name: [:0]WCHAR, command_line: [:0]WCHAR) !void {
 }
 
 pub fn call_entry(entry_point: usize) c_int {
-    return @intToPtr(*const fn (*PEB) callconv(.Win64) c_int, entry_point)(&peb);
+    return @as(*const fn (*PEB) callconv(.Win64) c_int, @ptrFromInt(entry_point))(&peb);
 }

@@ -38,53 +38,8 @@ fn doVfsInit() !void {
     try setSymlink("\\KnownDlls32\\KnownDllPath", "C:\\Windows\\System32");
 }
 
-fn trapHandler(signum: c_int, info: *const std.os.siginfo_t, ctx: ?*const anyopaque) callconv(.C) void {
-    const context = @ptrCast(*const std.os.ucontext_t, @alignCast(@alignOf(std.os.ucontext_t), ctx));
-    const gregs = context.mcontext.gregs;
-    const eax = @truncate(u32, gregs[std.os.REG.RAX]);
-
-    _ = signum;
-    _ = info;
-
-    const rip = gregs[std.os.REG.RIP] - 1;
-    logger("Trap at addr 0x{X}", .{rip});
-    const rbp = gregs[std.os.REG.RBP];
-    std.debug.dumpStackTraceFromBase(rbp, rip);
-
-    switch(eax) {
-        1 => {
-            const unk0 = std.mem.span(@intToPtr([*:0]u8, gregs[std.os.REG.RCX]));
-            const unk1 = @truncate(u16, gregs[std.os.REG.RDX]);
-            const unk2 = @truncate(u32, gregs[std.os.REG.R8]);
-            const unk3 = @truncate(u32, gregs[std.os.REG.R9]);
-            logger("DebugPrint('{s}', 0x{X}, 0x{X}, 0x{X})", .{
-                std.fmt.fmtSliceEscapeUpper(unk0), unk1, unk2, unk3
-            });
-        },
-        2 => {
-            const unk0 = gregs[std.os.REG.RCX];
-            const unk1 = @truncate(u16, gregs[std.os.REG.RDX]);
-            const unk2 = gregs[std.os.REG.R8];
-            const unk3 = @truncate(u16, gregs[std.os.REG.R9]);
-            logger("DebugPrompt(0x{X}, 0x{X}, 0x{X}, 0x{X})", .{
-                unk0, unk1, unk2, unk3
-            });
-        },
-        else => logger("Unknown debug call 0x{X}", .{eax}),
-    }
-    std.os.abort();
-}
-
 pub fn main() !void {
     try rt.init(&smss_path, &smss_command_line);
-
-    var sa = std.os.Sigaction{
-        .handler = .{ .sigaction = trapHandler },
-        .flags = 0,
-        .mask = std.mem.zeroes([32]u32),
-    };
-
-    try std.os.sigaction(std.os.SIG.TRAP, &sa, null);
 
     var ntdll_file = try std.fs.cwd().openFile("test/Windows/System32/ntdll.dll", .{});
     defer ntdll_file.close();
